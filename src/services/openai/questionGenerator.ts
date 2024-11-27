@@ -5,7 +5,7 @@ export const generateSingleQuestion = async (previousQuestions: any[], category?
   const prompt = `${FERMI_PROMPT}\n${categoryPrompt}`;
 
   const completion = await openai.chat.completions.create({
-    model: "gpt-4",
+    model: "gpt-3.5-turbo",
     messages: [
       {
         role: "system",
