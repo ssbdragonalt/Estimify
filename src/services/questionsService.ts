@@ -4,7 +4,8 @@ const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
 let model: any = null;
 
 const FERMI_CONTEXT = `
-Generate a Fermi estimation question following this EXACT format:
+You are a Fermi estimation expert. Generate a unique Fermi estimation question following this EXACT format:
+
 {
   "question": "How many heartbeats does an average person have in their lifetime?",
   "answer": 2628000000,
@@ -12,14 +13,27 @@ Generate a Fermi estimation question following this EXACT format:
 }
 
 Requirements:
-1. The answer MUST be the exact mathematical result, not an approximation
+1. The answer MUST be based on verified statistical data or scientific facts
 2. The context should guide users through intuitive steps that would help them arrive at the answer
 3. Break down complex calculations into relatable, everyday concepts
 4. Use common reference points that people can easily understand
 5. NO additional text or formatting - return ONLY the JSON object
 6. NO markdown formatting in the response
+7. NEVER repeat questions from this list of previously asked questions: [PREVIOUS_QUESTIONS]
 
 The context should read like a helpful friend explaining their thought process, not just listing calculations.
+
+Categories to draw from:
+1. Human biology (heartbeats, breaths, blinks)
+2. Daily activities (steps walked, words spoken)
+3. Global phenomena (raindrops falling, lightning strikes)
+4. Technology (emails sent, web searches)
+5. Nature (trees on Earth, birds in flight)
+6. Space (distance to moon in football fields)
+7. Time (seconds in a lifetime)
+8. Transportation (total flight distance of all planes)
+
+Use verified sources and consistent data across questions.
 `;
 
 const initializeModel = () => {
@@ -35,34 +49,33 @@ const initializeModel = () => {
 };
 
 const cleanJsonResponse = (response: string): string => {
-  // Remove any markdown code blocks
   let cleaned = response.replace(/```json\n|\n```|```/g, '');
-  
-  // Remove any leading/trailing whitespace
   cleaned = cleaned.trim();
-  
-  // If the response starts with a newline or any other character before {, remove it
   const firstBrace = cleaned.indexOf('{');
   if (firstBrace > 0) {
     cleaned = cleaned.slice(firstBrace);
   }
-  
-  // If there's any content after the last }, remove it
   const lastBrace = cleaned.lastIndexOf('}');
   if (lastBrace !== -1 && lastBrace < cleaned.length - 1) {
     cleaned = cleaned.slice(0, lastBrace + 1);
   }
-  
   return cleaned;
 };
+
+let askedQuestions: string[] = [];
 
 export const generateQuestion = async () => {
   try {
     const model = initializeModel();
+    const promptWithPrevious = FERMI_CONTEXT.replace(
+      '[PREVIOUS_QUESTIONS]',
+      JSON.stringify(askedQuestions)
+    );
+
     const result = await model.generateContent({
-      contents: [{ role: "user", parts: [{ text: FERMI_CONTEXT }]}],
+      contents: [{ role: "user", parts: [{ text: promptWithPrevious }]}],
       generationConfig: {
-        temperature: 0.3, // Lower temperature for more precise outputs
+        temperature: 0.3,
         topK: 1,
         topP: 1,
         maxOutputTokens: 1024,
@@ -75,14 +88,23 @@ export const generateQuestion = async () => {
     try {
       const parsed = JSON.parse(cleanedResponse);
       
-      // Validate the response structure
       if (!parsed.question || !parsed.answer || !parsed.context) {
         throw new Error("Invalid response structure");
       }
       
-      // Validate that answer is a number
       if (typeof parsed.answer !== 'number') {
         throw new Error("Answer must be a number");
+      }
+
+      if (askedQuestions.includes(parsed.question)) {
+        throw new Error("Duplicate question generated");
+      }
+
+      askedQuestions.push(parsed.question);
+      
+      // Keep only the last 100 questions to prevent memory issues
+      if (askedQuestions.length > 100) {
+        askedQuestions = askedQuestions.slice(-100);
       }
       
       return parsed;

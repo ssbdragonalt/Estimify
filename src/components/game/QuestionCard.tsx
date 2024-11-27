@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { HeartButton } from "./HeartButton";
 
 interface QuestionCardProps {
   currentQuestionIndex: number;
@@ -13,6 +14,7 @@ interface QuestionCardProps {
   actualAnswer?: number;
   context?: string;
   logError?: number;
+  questionId?: string;
   onGuessChange: (value: string) => void;
   onSubmit: () => void;
   onNext: () => void;
@@ -28,6 +30,7 @@ export const QuestionCard = ({
   actualAnswer,
   context,
   logError,
+  questionId,
   onGuessChange,
   onSubmit,
   onNext,
@@ -39,9 +42,12 @@ export const QuestionCard = ({
           <p className="text-sm text-muted-foreground">
             Question {currentQuestionIndex + 1} of {totalQuestions}
           </p>
-          <p className="text-sm text-muted-foreground">
-            Score: {(score / (currentQuestionIndex + 1)).toFixed(2)}
-          </p>
+          <div className="flex items-center gap-4">
+            <p className="text-sm text-muted-foreground">
+              Score: {(score / (currentQuestionIndex + 1)).toFixed(2)}
+            </p>
+            {questionId && <HeartButton questionId={questionId} />}
+          </div>
         </div>
         <Progress
           value={(currentQuestionIndex / totalQuestions) * 100}
