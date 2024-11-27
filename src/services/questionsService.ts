@@ -4,32 +4,30 @@ const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
 let model: any = null;
 
 const FERMI_CONTEXT = `
-You are an expert at creating Fermi estimation problems. These are questions that require breaking down large estimation problems into smaller, more manageable parts.
+You are an expert at creating Fermi estimation problems. Generate questions that:
+1. Have specific numerical answers that can be estimated through logical steps
+2. Test understanding of real-world quantities and relationships
+3. Can be broken down into smaller, more manageable parts
+4. Are engaging and relate to everyday experiences or interesting phenomena
 
-Some examples of good Fermi problems:
-1. "How many piano tuners are there in Chicago?" (Consider population, piano ownership rate, tuning frequency)
-2. "How many breaths does a person take in their lifetime?" (Consider lifespan, breathing rate variations)
-3. "How many trees are needed to print all Harry Potter books ever sold?" (Consider book length, paper per tree, sales figures)
+Example format:
+{
+  "question": "How many heartbeats does an average person have in their lifetime?",
+  "answer": 2628000000,
+  "context": "Breaking this down: Average lifespan (70 years) × 365 days/year × 24 hours/day × 60 minutes/hour × 75 beats/minute. The actual number varies based on age and fitness level."
+}
 
-Generate an estimation question that:
-1. Has a specific numerical answer
-2. Requires breaking down into smaller parts
-3. Tests intuition about real-world quantities
-4. Includes interesting context about the answer and how to break down the problem
-5. Provides a step-by-step estimation process
+Important:
+- Return ONLY valid JSON
+- Include step-by-step estimation process in context
+- Ensure numerical answer is realistic
+- No markdown formatting in response
 `;
-
-const QUESTION_PROMPT = `${FERMI_CONTEXT}
-Format the response as a JSON object with properties:
-- question: the estimation question
-- answer: the numerical answer
-- context: explanation of how to break down the problem and interesting facts about the answer
-Example: {"question": "How many heartbeats does an average person have in their lifetime?", "answer": 2628000000, "context": "This can be estimated by breaking down: 70 years × 365 days × 24 hours × 60 minutes × 75 beats per minute. The actual number varies based on age, fitness level, and lifestyle."}`;
 
 const initializeModel = () => {
   if (!model) {
     try {
-      model = genAI.getGenerativeModel({ model: "gemini-pro" });
+      model = genAI.getGenerativeModel({ model: "gemini-1.0-pro" });
     } catch (error) {
       console.error("Failed to initialize Gemini model:", error);
       throw new Error("Failed to initialize AI model");
@@ -38,15 +36,27 @@ const initializeModel = () => {
   return model;
 };
 
+// Add delay between API calls
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export const generateQuestion = async () => {
   try {
     const model = initializeModel();
-    const result = await model.generateContent(QUESTION_PROMPT);
+    const result = await model.generateContent(FERMI_CONTEXT);
     const response = result.response.text();
-    return JSON.parse(response);
+    
+    // Clean the response to ensure valid JSON
+    const cleanedResponse = response.replace(/```json\n|\n```/g, '').trim();
+    
+    try {
+      return JSON.parse(cleanedResponse);
+    } catch (parseError) {
+      console.error("JSON Parse Error:", parseError);
+      throw new Error("Invalid response format");
+    }
   } catch (error) {
     console.error("Error generating question:", error);
-    throw new Error("Failed to generate question");
+    throw error;
   }
 };
 
@@ -57,27 +67,28 @@ export const generateFeedback = async (questions: any[], guesses: number[]) => {
     const questionsAndGuesses = questions.map((q, i) => ({
       question: q.question,
       actual: q.answer,
-      guess: guesses[i]
+      guess: guesses[i],
+      logError: Math.abs(Math.log10(guesses[i]) - Math.log10(q.answer))
     }));
 
     const feedbackPrompt = `
-      Analyze these Fermi estimation attempts:
+      Analyze these Fermi estimation attempts and provide constructive feedback:
       ${JSON.stringify(questionsAndGuesses)}
 
-      Provide constructive feedback in the following format:
-      1. Overall Performance: How well did they do across all questions?
-      2. Patterns: Were they consistently over or underestimating?
-      3. Best Estimates: Which questions were estimated most accurately?
-      4. Areas for Improvement: Specific tips for better estimation
-      5. General Strategy: Suggest a systematic approach for breaking down similar estimation problems
+      Focus on:
+      1. Overall accuracy and patterns in estimation
+      2. Which questions were estimated well vs poorly
+      3. Specific strategies for breaking down similar problems
+      4. Common estimation principles that could improve accuracy
+      5. Practical tips for future estimations
 
-      Keep the response encouraging and focused on improvement strategies.
+      Keep the feedback encouraging and actionable.
     `;
 
     const result = await model.generateContent(feedbackPrompt);
     return result.response.text();
   } catch (error) {
     console.error("Error generating feedback:", error);
-    throw new Error("Failed to generate feedback");
+    throw error;
   }
 };

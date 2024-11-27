@@ -36,11 +36,27 @@ const Game = () => {
   const loadQuestions = async () => {
     setIsLoading(true);
     try {
-      const questionPromises = Array(TOTAL_QUESTIONS)
-        .fill(null)
-        .map(() => generateQuestion());
-      const loadedQuestions = await Promise.all(questionPromises);
-      setQuestions(loadedQuestions);
+      const questions = [];
+      for (let i = 0; i < TOTAL_QUESTIONS; i++) {
+        try {
+          const question = await generateQuestion();
+          questions.push(question);
+          // Add delay between requests to avoid rate limiting
+          if (i < TOTAL_QUESTIONS - 1) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        } catch (error) {
+          console.error(`Error generating question ${i + 1}:`, error);
+          toast({
+            title: "Error loading question",
+            description: "Retrying...",
+            variant: "destructive",
+          });
+          i--; // Retry this question
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Wait longer before retry
+        }
+      }
+      setQuestions(questions);
     } catch (error) {
       toast({
         title: "Error loading questions",
