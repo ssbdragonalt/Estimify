@@ -2,7 +2,9 @@ import { useState, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useUser } from "@clerk/clerk-react";
 import { useNavigate } from "react-router-dom";
-import { generateQuestion, generateFeedback } from "@/services/questionsService";
+import { generateQuestion } from "@/services/questionGenerationService";
+import { generateFeedback } from "@/services/aiService";
+import { submitScore } from "@/services/leaderboardService";
 import { QuestionCard } from "@/components/game/QuestionCard";
 import { FeedbackDialog } from "@/components/game/FeedbackDialog";
 import { Button } from "@/components/ui/button";
@@ -104,39 +106,34 @@ const Game = () => {
 
   const nextQuestion = async () => {
     if (currentQuestionIndex === TOTAL_QUESTIONS - 1) {
-      try {
-        const feedbackText = await generateFeedback(questions, [...guesses, parseFloat(guess)]);
-        setFeedback(feedbackText);
-        setShowFeedback(true);
-
-        if (user) {
-          const finalScore = score / TOTAL_QUESTIONS;
-          await fetch("/api/leaderboard", {
-            method: "POST",
-            headers: { 
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${user.id}`
-            },
-            body: JSON.stringify({
-              userId: user.id,
-              username: user.username || user.firstName || "Anonymous",
-              score: finalScore,
-              totalQuestions: TOTAL_QUESTIONS,
-              timestamp: new Date().toISOString()
-            }),
-          });
-        }
-      } catch (error) {
-        toast({
-          title: "Error saving score",
-          description: "Your score might not appear on the leaderboard",
-          variant: "destructive",
-        });
-      }
+      handleGameComplete();
     } else {
       setCurrentQuestionIndex((prev) => prev + 1);
       setGuess("");
       setShowResult(false);
+    }
+  };
+
+  const handleGameComplete = async () => {
+    try {
+      const feedbackText = await generateFeedback(questions, [...guesses, parseFloat(guess)]);
+      setFeedback(feedbackText);
+      setShowFeedback(true);
+
+      if (user) {
+        const finalScore = score / TOTAL_QUESTIONS;
+        await submitScore(
+          user.id,
+          user.username || user.firstName || "Anonymous",
+          finalScore
+        );
+      }
+    } catch (error) {
+      toast({
+        title: "Error saving score",
+        description: "Your score might not appear on the leaderboard",
+        variant: "destructive",
+      });
     }
   };
 
