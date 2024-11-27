@@ -14,6 +14,8 @@ interface Question {
 }
 
 const TOTAL_QUESTIONS = 10;
+const MIN_SCORE = 0;
+const MAX_SCORE = 1;
 
 const Game = () => {
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -73,8 +75,10 @@ const Game = () => {
     setIsLoading(false);
   };
 
-  const calculateLogError = (guess: number, actual: number) => {
-    return Math.abs(Math.log10(guess) - Math.log10(actual));
+  const calculateScore = (logError: number) => {
+    // Convert log error to a score between 0 and 1
+    const score = Math.max(MIN_SCORE, Math.min(MAX_SCORE, 1 - logError));
+    return score;
   };
 
   const handleSubmit = async () => {
@@ -91,8 +95,8 @@ const Game = () => {
       return;
     }
 
-    const logError = calculateLogError(numericGuess, currentQuestion.answer);
-    const questionScore = Math.max(0, 1 - logError);
+    const logError = Math.abs(Math.log10(numericGuess) - Math.log10(currentQuestion.answer));
+    const questionScore = calculateScore(logError);
     setScore((prev) => prev + questionScore);
     setGuesses([...guesses, numericGuess]);
     setShowResult(true);
@@ -106,21 +110,26 @@ const Game = () => {
         setShowFeedback(true);
 
         if (user) {
-          const accuracy = score / TOTAL_QUESTIONS;
+          const finalScore = score / TOTAL_QUESTIONS;
           await fetch("/api/leaderboard", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { 
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${user.id}`
+            },
             body: JSON.stringify({
               userId: user.id,
-              username: user.username,
-              accuracy,
+              username: user.username || user.firstName || "Anonymous",
+              score: finalScore,
+              totalQuestions: TOTAL_QUESTIONS,
+              timestamp: new Date().toISOString()
             }),
           });
         }
       } catch (error) {
         toast({
-          title: "Error generating feedback",
-          description: "Please try again later",
+          title: "Error saving score",
+          description: "Your score might not appear on the leaderboard",
           variant: "destructive",
         });
       }
@@ -154,7 +163,7 @@ const Game = () => {
         context={showResult ? currentQuestion?.context : undefined}
         logError={
           showResult
-            ? calculateLogError(parseFloat(guess), currentQuestion?.answer || 0)
+            ? Math.abs(Math.log10(parseFloat(guess)) - Math.log10(currentQuestion?.answer || 0))
             : undefined
         }
         onGuessChange={setGuess}

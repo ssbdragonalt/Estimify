@@ -51,11 +51,9 @@ const initializeModel = () => {
 };
 
 const cleanJsonResponse = (response: string): string => {
-  // Remove any markdown code blocks
   let cleaned = response.replace(/```json\n|\n```|```/g, '');
   cleaned = cleaned.trim();
   
-  // Find the first { and last }
   const firstBrace = cleaned.indexOf('{');
   const lastBrace = cleaned.lastIndexOf('}');
   
@@ -63,9 +61,7 @@ const cleanJsonResponse = (response: string): string => {
     throw new Error("Invalid JSON format: Missing braces");
   }
   
-  // Extract just the JSON object
   cleaned = cleaned.slice(firstBrace, lastBrace + 1);
-  
   return cleaned;
 };
 
@@ -83,7 +79,7 @@ const getUserQuestions = async (userId: string) => {
   }
 };
 
-const validateQuestion = (parsed: any) => {
+const validateQuestion = (parsed: any, previousQuestions: any[]) => {
   if (!parsed.question || !parsed.answer || !parsed.context) {
     throw new Error("Missing required fields");
   }
@@ -95,46 +91,66 @@ const validateQuestion = (parsed: any) => {
   if (typeof parsed.question !== 'string' || parsed.question.trim() === '') {
     throw new Error("Question must be a non-empty string");
   }
+
+  // Check for similar questions using fuzzy matching
+  const similarQuestion = previousQuestions.find(q => 
+    q.question.toLowerCase().includes(parsed.question.toLowerCase()) ||
+    parsed.question.toLowerCase().includes(q.question.toLowerCase())
+  );
+
+  if (similarQuestion) {
+    throw new Error("Similar question already exists");
+  }
   
   return true;
 };
 
+const generateSingleQuestion = async (
+  model: any,
+  previousQuestions: any[],
+  category?: string
+) => {
+  const categoryPrompt = category ? `Focus on questions from the ${category} category.` : '';
+  const prompt = `${FERMI_CONTEXT}\n${categoryPrompt}`;
+
+  const result = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }]}],
+    generationConfig: {
+      temperature: 0.7,
+      topK: 1,
+      topP: 1,
+      maxOutputTokens: 1024,
+    },
+  });
+
+  const response = result.response.text();
+  const cleanedResponse = cleanJsonResponse(response);
+  const parsed = JSON.parse(cleanedResponse);
+  validateQuestion(parsed, previousQuestions);
+  return parsed;
+};
+
 export const generateQuestion = async (userId: string, retryCount = 0) => {
   const MAX_RETRIES = 3;
+  const categories = [
+    'human biology',
+    'daily activities',
+    'global phenomena',
+    'technology',
+    'nature',
+    'space',
+    'time',
+    'transportation'
+  ];
   
   try {
     const model = initializeModel();
     const userQuestions = await getUserQuestions(userId);
-    
-    const promptWithPrevious = FERMI_CONTEXT.replace(
-      '[PREVIOUS_QUESTIONS]',
-      JSON.stringify(userQuestions)
-    );
+    const currentQuestionCount = userQuestions.length;
+    const category = categories[currentQuestionCount % categories.length];
 
-    const result = await model.generateContent({
-      contents: [{ role: "user", parts: [{ text: promptWithPrevious }]}],
-      generationConfig: {
-        temperature: 0.3,
-        topK: 1,
-        topP: 1,
-        maxOutputTokens: 1024,
-      },
-    });
-    
-    const response = result.response.text();
-    const cleanedResponse = cleanJsonResponse(response);
-    
     try {
-      const parsed = JSON.parse(cleanedResponse);
-      validateQuestion(parsed);
-      
-      if (userQuestions.includes(parsed.question)) {
-        if (retryCount < MAX_RETRIES) {
-          console.log(`Duplicate question detected, retrying (${retryCount + 1}/${MAX_RETRIES})...`);
-          return generateQuestion(userId, retryCount + 1);
-        }
-        throw new Error("Max retries reached for duplicate questions");
-      }
+      const question = await generateSingleQuestion(model, userQuestions, category);
 
       // Save the question to user's history
       await fetch("/api/user-questions", {
@@ -145,17 +161,17 @@ export const generateQuestion = async (userId: string, retryCount = 0) => {
         },
         body: JSON.stringify({
           userId,
-          question: parsed.question
+          question: question.question
         }),
       });
       
-      return parsed;
-    } catch (parseError) {
+      return question;
+    } catch (error) {
       if (retryCount < MAX_RETRIES) {
-        console.log(`Invalid response format, retrying (${retryCount + 1}/${MAX_RETRIES})...`);
+        console.log(`Error generating question, retrying (${retryCount + 1}/${MAX_RETRIES})...`);
         return generateQuestion(userId, retryCount + 1);
       }
-      throw new Error("Invalid response format after max retries");
+      throw error;
     }
   } catch (error) {
     console.error("Error generating question:", error);
