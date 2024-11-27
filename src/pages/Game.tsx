@@ -30,16 +30,22 @@ const Game = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
+    if (!user) {
+      navigate("/");
+      return;
+    }
     loadQuestions();
-  }, []);
+  }, [user, navigate]);
 
   const loadQuestions = async () => {
+    if (!user) return;
+    
     setIsLoading(true);
     try {
       const questions = [];
       for (let i = 0; i < TOTAL_QUESTIONS; i++) {
         try {
-          const question = await generateQuestion();
+          const question = await generateQuestion(user.id);
           questions.push(question);
           // Add delay between requests to avoid rate limiting
           if (i < TOTAL_QUESTIONS - 1) {

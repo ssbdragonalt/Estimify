@@ -1,5 +1,4 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { useUser } from "@clerk/clerk-react";
 
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
 let model: any = null;
@@ -52,22 +51,30 @@ const initializeModel = () => {
 };
 
 const cleanJsonResponse = (response: string): string => {
+  // Remove any markdown code blocks
   let cleaned = response.replace(/```json\n|\n```|```/g, '');
   cleaned = cleaned.trim();
+  
+  // Find the first { and last }
   const firstBrace = cleaned.indexOf('{');
-  if (firstBrace > 0) {
-    cleaned = cleaned.slice(firstBrace);
-  }
   const lastBrace = cleaned.lastIndexOf('}');
-  if (lastBrace !== -1 && lastBrace < cleaned.length - 1) {
-    cleaned = cleaned.slice(0, lastBrace + 1);
+  
+  if (firstBrace === -1 || lastBrace === -1) {
+    throw new Error("Invalid JSON format: Missing braces");
   }
+  
+  // Extract just the JSON object
+  cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+  
   return cleaned;
 };
 
 const getUserQuestions = async (userId: string) => {
   try {
     const response = await fetch(`/api/user-questions/${userId}`);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
     const data = await response.json();
     return data.questions || [];
   } catch (error) {
@@ -76,13 +83,28 @@ const getUserQuestions = async (userId: string) => {
   }
 };
 
-export const generateQuestion = async () => {
-  const { user } = useUser();
-  if (!user) throw new Error("User not authenticated");
+const validateQuestion = (parsed: any) => {
+  if (!parsed.question || !parsed.answer || !parsed.context) {
+    throw new Error("Missing required fields");
+  }
+  
+  if (typeof parsed.answer !== 'number' || isNaN(parsed.answer)) {
+    throw new Error("Answer must be a number");
+  }
+  
+  if (typeof parsed.question !== 'string' || parsed.question.trim() === '') {
+    throw new Error("Question must be a non-empty string");
+  }
+  
+  return true;
+};
 
+export const generateQuestion = async (userId: string, retryCount = 0) => {
+  const MAX_RETRIES = 3;
+  
   try {
     const model = initializeModel();
-    const userQuestions = await getUserQuestions(user.id);
+    const userQuestions = await getUserQuestions(userId);
     
     const promptWithPrevious = FERMI_CONTEXT.replace(
       '[PREVIOUS_QUESTIONS]',
@@ -104,17 +126,14 @@ export const generateQuestion = async () => {
     
     try {
       const parsed = JSON.parse(cleanedResponse);
+      validateQuestion(parsed);
       
-      if (!parsed.question || !parsed.answer || !parsed.context) {
-        throw new Error("Invalid response structure");
-      }
-      
-      if (typeof parsed.answer !== 'number') {
-        throw new Error("Answer must be a number");
-      }
-
       if (userQuestions.includes(parsed.question)) {
-        throw new Error("Duplicate question generated");
+        if (retryCount < MAX_RETRIES) {
+          console.log(`Duplicate question detected, retrying (${retryCount + 1}/${MAX_RETRIES})...`);
+          return generateQuestion(userId, retryCount + 1);
+        }
+        throw new Error("Max retries reached for duplicate questions");
       }
 
       // Save the question to user's history
@@ -122,18 +141,21 @@ export const generateQuestion = async () => {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${user.id}`
+          "Authorization": `Bearer ${userId}`
         },
         body: JSON.stringify({
-          userId: user.id,
+          userId,
           question: parsed.question
         }),
       });
       
       return parsed;
     } catch (parseError) {
-      console.error("JSON Parse Error:", parseError);
-      throw new Error("Invalid response format");
+      if (retryCount < MAX_RETRIES) {
+        console.log(`Invalid response format, retrying (${retryCount + 1}/${MAX_RETRIES})...`);
+        return generateQuestion(userId, retryCount + 1);
+      }
+      throw new Error("Invalid response format after max retries");
     }
   } catch (error) {
     console.error("Error generating question:", error);
