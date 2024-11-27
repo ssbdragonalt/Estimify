@@ -23,9 +23,14 @@ export const generateSingleQuestion = async (previousQuestions: any[], category?
   const response = completion.choices[0].message.content;
   if (!response) throw new Error("No response from OpenAI");
   
-  const parsed = JSON.parse(response);
-  validateQuestion(parsed, previousQuestions);
-  return parsed;
+  try {
+    const parsed = JSON.parse(response);
+    validateQuestion(parsed, previousQuestions);
+    return parsed;
+  } catch (error) {
+    console.error("Failed to parse OpenAI response:", error);
+    throw new Error("Invalid question format received from OpenAI");
+  }
 };
 
 const validateQuestion = (parsed: any, previousQuestions: any[]) => {
