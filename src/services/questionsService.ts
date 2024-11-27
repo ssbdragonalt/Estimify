@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { useUser } from "@clerk/clerk-react";
 
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
 let model: any = null;
@@ -13,13 +14,15 @@ You are a Fermi estimation expert. Generate a unique Fermi estimation question f
 }
 
 Requirements:
-1. The answer MUST be based on verified statistical data or scientific facts
+1. The answer MUST be based on verified statistical data or scientific facts from reputable sources
 2. The context should guide users through intuitive steps that would help them arrive at the answer
 3. Break down complex calculations into relatable, everyday concepts
 4. Use common reference points that people can easily understand
 5. NO additional text or formatting - return ONLY the JSON object
 6. NO markdown formatting in the response
 7. NEVER repeat questions from this list of previously asked questions: [PREVIOUS_QUESTIONS]
+8. All numerical answers must be exact and consistent across all instances
+9. Include source citation in the context when possible
 
 The context should read like a helpful friend explaining their thought process, not just listing calculations.
 
@@ -62,14 +65,28 @@ const cleanJsonResponse = (response: string): string => {
   return cleaned;
 };
 
-let askedQuestions: string[] = [];
+const getUserQuestions = async (userId: string) => {
+  try {
+    const response = await fetch(`/api/user-questions/${userId}`);
+    const data = await response.json();
+    return data.questions || [];
+  } catch (error) {
+    console.error("Error fetching user questions:", error);
+    return [];
+  }
+};
 
 export const generateQuestion = async () => {
+  const { user } = useUser();
+  if (!user) throw new Error("User not authenticated");
+
   try {
     const model = initializeModel();
+    const userQuestions = await getUserQuestions(user.id);
+    
     const promptWithPrevious = FERMI_CONTEXT.replace(
       '[PREVIOUS_QUESTIONS]',
-      JSON.stringify(askedQuestions)
+      JSON.stringify(userQuestions)
     );
 
     const result = await model.generateContent({
@@ -96,16 +113,22 @@ export const generateQuestion = async () => {
         throw new Error("Answer must be a number");
       }
 
-      if (askedQuestions.includes(parsed.question)) {
+      if (userQuestions.includes(parsed.question)) {
         throw new Error("Duplicate question generated");
       }
 
-      askedQuestions.push(parsed.question);
-      
-      // Keep only the last 100 questions to prevent memory issues
-      if (askedQuestions.length > 100) {
-        askedQuestions = askedQuestions.slice(-100);
-      }
+      // Save the question to user's history
+      await fetch("/api/user-questions", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${user.id}`
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          question: parsed.question
+        }),
+      });
       
       return parsed;
     } catch (parseError) {
