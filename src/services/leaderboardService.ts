@@ -25,11 +25,15 @@ export const submitScore = async (userId: string, username: string, score: numbe
 
 export const getTopScores = async () => {
   try {
-    const response = await fetch("/api/leaderboard/top");
+    // Updated to fetch all-time top scores
+    const response = await fetch("/api/leaderboard/top?limit=10");
     if (!response.ok) {
       throw new Error('Failed to fetch leaderboard');
     }
-    return await response.json();
+    const data = await response.json();
+    
+    // Sort by score in descending order and take top 10
+    return data.sort((a: any, b: any) => b.score - a.score).slice(0, 10);
   } catch (error) {
     console.error("Error fetching leaderboard:", error);
     throw error;
