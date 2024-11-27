@@ -15,7 +15,8 @@ Generate an estimation question that:
 1. Has a specific numerical answer
 2. Requires breaking down into smaller parts
 3. Tests intuition about real-world quantities
-4. Includes interesting context about the answer
+4. Includes interesting context about the answer and how to break down the problem
+5. Provides a step-by-step estimation process
 `;
 
 const QUESTION_PROMPT = `${FERMI_CONTEXT}
@@ -27,40 +28,56 @@ Example: {"question": "How many heartbeats does an average person have in their 
 
 const initializeModel = () => {
   if (!model) {
-    model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    try {
+      model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    } catch (error) {
+      console.error("Failed to initialize Gemini model:", error);
+      throw new Error("Failed to initialize AI model");
+    }
   }
   return model;
 };
 
 export const generateQuestion = async () => {
-  const model = initializeModel();
-  const result = await model.generateContent(QUESTION_PROMPT);
-  const response = result.response.text();
-  return JSON.parse(response);
+  try {
+    const model = initializeModel();
+    const result = await model.generateContent(QUESTION_PROMPT);
+    const response = result.response.text();
+    return JSON.parse(response);
+  } catch (error) {
+    console.error("Error generating question:", error);
+    throw new Error("Failed to generate question");
+  }
 };
 
 export const generateFeedback = async (questions: any[], guesses: number[]) => {
-  const model = initializeModel();
-  
-  const questionsAndGuesses = questions.map((q, i) => ({
-    question: q.question,
-    actual: q.answer,
-    guess: guesses[i]
-  }));
+  try {
+    const model = initializeModel();
+    
+    const questionsAndGuesses = questions.map((q, i) => ({
+      question: q.question,
+      actual: q.answer,
+      guess: guesses[i]
+    }));
 
-  const feedbackPrompt = `
-    Analyze these Fermi estimation attempts:
-    ${JSON.stringify(questionsAndGuesses)}
+    const feedbackPrompt = `
+      Analyze these Fermi estimation attempts:
+      ${JSON.stringify(questionsAndGuesses)}
 
-    Provide constructive feedback on:
-    1. Overall estimation accuracy
-    2. Any systematic bias (consistently over/underestimating)
-    3. Specific tips for improvement
-    4. Areas where the estimations were particularly good
+      Provide constructive feedback in the following format:
+      1. Overall Performance: How well did they do across all questions?
+      2. Patterns: Were they consistently over or underestimating?
+      3. Best Estimates: Which questions were estimated most accurately?
+      4. Areas for Improvement: Specific tips for better estimation
+      5. General Strategy: Suggest a systematic approach for breaking down similar estimation problems
 
-    Keep the response concise and encouraging.
-  `;
+      Keep the response encouraging and focused on improvement strategies.
+    `;
 
-  const result = await model.generateContent(feedbackPrompt);
-  return result.response.text();
+    const result = await model.generateContent(feedbackPrompt);
+    return result.response.text();
+  } catch (error) {
+    console.error("Error generating feedback:", error);
+    throw new Error("Failed to generate feedback");
+  }
 };

@@ -7,7 +7,6 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Game from "./pages/Game";
 import Leaderboard from "./pages/Leaderboard";
-import Feedback from "./pages/Feedback";
 
 if (!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY) {
   throw new Error("Missing Clerk Publishable Key");
@@ -27,7 +26,6 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/game" element={<Game />} />
             <Route path="/leaderboard" element={<Leaderboard />} />
-            <Route path="/feedback" element={<Feedback />} />
           </Routes>
         </BrowserRouter>
       </TooltipProvider>
