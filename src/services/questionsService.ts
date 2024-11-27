@@ -4,24 +4,18 @@ const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
 let model: any = null;
 
 const FERMI_CONTEXT = `
-You are an expert at creating Fermi estimation problems. Generate questions that:
-1. Have specific numerical answers that can be estimated through logical steps
-2. Test understanding of real-world quantities and relationships
-3. Can be broken down into smaller, more manageable parts
-4. Are engaging and relate to everyday experiences or interesting phenomena
-
-Example format:
+Generate a Fermi estimation question in the following JSON format:
 {
   "question": "How many heartbeats does an average person have in their lifetime?",
   "answer": 2628000000,
   "context": "Breaking this down: Average lifespan (70 years) × 365 days/year × 24 hours/day × 60 minutes/hour × 75 beats/minute. The actual number varies based on age and fitness level."
 }
 
-Important:
-- Return ONLY valid JSON
-- Include step-by-step estimation process in context
-- Ensure numerical answer is realistic
-- No markdown formatting in response
+Requirements:
+1. Question should test understanding of real-world quantities
+2. Answer must be a specific numerical value
+3. Context must explain the estimation process
+4. Response must be ONLY the JSON object, no additional text or formatting
 `;
 
 const initializeModel = () => {
@@ -36,20 +30,53 @@ const initializeModel = () => {
   return model;
 };
 
-// Add delay between API calls
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const cleanJsonResponse = (response: string): string => {
+  // Remove any markdown code blocks
+  let cleaned = response.replace(/```json\n|\n```|```/g, '');
+  
+  // Remove any leading/trailing whitespace
+  cleaned = cleaned.trim();
+  
+  // If the response starts with a newline or any other character before {, remove it
+  const firstBrace = cleaned.indexOf('{');
+  if (firstBrace > 0) {
+    cleaned = cleaned.slice(firstBrace);
+  }
+  
+  // If there's any content after the last }, remove it
+  const lastBrace = cleaned.lastIndexOf('}');
+  if (lastBrace !== -1 && lastBrace < cleaned.length - 1) {
+    cleaned = cleaned.slice(0, lastBrace + 1);
+  }
+  
+  return cleaned;
+};
 
 export const generateQuestion = async () => {
   try {
     const model = initializeModel();
-    const result = await model.generateContent(FERMI_CONTEXT);
-    const response = result.response.text();
+    const result = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: FERMI_CONTEXT }]}],
+      generationConfig: {
+        temperature: 0.7,
+        topK: 1,
+        topP: 1,
+        maxOutputTokens: 1024,
+      },
+    });
     
-    // Clean the response to ensure valid JSON
-    const cleanedResponse = response.replace(/```json\n|\n```/g, '').trim();
+    const response = result.response.text();
+    const cleanedResponse = cleanJsonResponse(response);
     
     try {
-      return JSON.parse(cleanedResponse);
+      const parsed = JSON.parse(cleanedResponse);
+      
+      // Validate the response structure
+      if (!parsed.question || !parsed.answer || !parsed.context) {
+        throw new Error("Invalid response structure");
+      }
+      
+      return parsed;
     } catch (parseError) {
       console.error("JSON Parse Error:", parseError);
       throw new Error("Invalid response format");
