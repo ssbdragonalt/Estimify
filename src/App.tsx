@@ -9,6 +9,10 @@ import Game from "./pages/Game";
 import Leaderboard from "./pages/Leaderboard";
 import Feedback from "./pages/Feedback";
 
+if (!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY) {
+  throw new Error("Missing Clerk Publishable Key");
+}
+
 const queryClient = new QueryClient();
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
